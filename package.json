@@ -11,7 +11,7 @@
                     "build:api":  "pnpm --filter @payflow/api-gateway build",
                     "preview":  "pnpm --filter @payflow/web preview",
                     "lint":  "pnpm --filter @payflow/web lint",
-                    "deploy:api":  "pnpm --filter @payflow/api-gateway deploy",
+                    "deploy:api":  "pnpm --filter @payflow/api-gateway run deploy",
                     "db:generate":  "pnpm --filter @payflow/db db:generate",
                     "db:migrate":  "pnpm --filter @payflow/db db:migrate",
                     "db:studio":  "pnpm --filter @payflow/db db:studio"
@@ -24,7 +24,8 @@
                                            ],
                  "overrides":  {
                                    "@types/react":  "19.2.14",
-                                   "@types/react-dom":  "19.2.3"
+                                   "@types/react-dom":  "19.2.3",
+                                   "drizzle-orm":  "^0.45.1"
                                }
              }
 }
