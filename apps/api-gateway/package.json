@@ -1,0 +1,22 @@
+{
+  "name": "@payflow/api-gateway",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:remote": "wrangler dev --remote",
+    "build": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@payflow/db": "workspace:*",
+    "@payflow/types": "workspace:*",
+    "hono": "^4.8.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241230.0",
+    "typescript": "~5.9.3",
+    "wrangler": "^4.56.0"
+  }
+}

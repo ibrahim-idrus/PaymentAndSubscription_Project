@@ -1,0 +1,10 @@
+name = "payflow-api-gateway"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Add non-secret env vars here
+
+# Secrets must be set via wrangler secret:
+#   wrangler secret put DATABASE_URL
