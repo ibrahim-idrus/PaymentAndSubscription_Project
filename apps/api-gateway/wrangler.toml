@@ -8,3 +8,29 @@ compatibility_flags = ["nodejs_compat"]
 
 # Secrets must be set via wrangler secret:
 #   wrangler secret put DATABASE_URL
+
+# Cloudflare Queues (producer bindings)
+# - Each `[[queues.producers]]` block tells Wrangler to bind an existing Queue to this Worker.
+# - `queue`   : the Queue name in your Cloudflare account (must exist, or be created via `wrangler queues create <name>`).
+# - `binding` : the variable name that will be available inside your Worker code to enqueue messages.
+#              Example usage (JS/TS): `await env.PAYMENT_QUEUE.send({ ... })`
+
+[[queues.producers]]
+# Producer binding to enqueue payment-related background jobs.
+queue = "payment-jobs"
+binding = "PAYMENT_QUEUE"
+
+[[queues.producers]]
+# Producer binding to enqueue subscription lifecycle jobs (create/renew/cancel, etc).
+queue = "subscription-jobs"
+binding = "SUBSCRIPTION_QUEUE"
+
+[[queues.producers]]
+# Producer binding to enqueue incoming webhook processing (so HTTP requests can return fast).
+queue = "webhook-jobs"
+binding = "WEBHOOK_QUEUE"
+
+[[queues.producers]]
+# Producer binding to enqueue notification delivery jobs (email/WA/push, etc).
+queue = "notification-jobs"
+binding = "NOTIFICATION_QUEUE"

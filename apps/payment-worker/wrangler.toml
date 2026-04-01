@@ -1,0 +1,20 @@
+name = "payment-worker"
+main = "src/index.ts"
+compatibility_date = "2024-12-30"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Secrets: wrangler secret put DATABASE_URL
+
+[[queues.consumers]]
+queue = "payment-jobs"
+max_batch_size = 10
+max_batch_timeout = 5
+
+[[queues.producers]]
+queue = "subscription-jobs"
+binding = "SUBSCRIPTION_QUEUE"
+
+[[queues.producers]]
+queue = "notification-jobs"
+binding = "NOTIFICATION_QUEUE"
