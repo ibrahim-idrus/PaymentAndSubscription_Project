@@ -1,75 +1,58 @@
-// ─── HMAC ────────────────────────────────────────────────────────────────────
-
 /**
- * Sign a payload with HMAC-SHA256.
- * Uses the Web Crypto API — works in Cloudflare Workers & Node.js 18+.
+ * @payflow/utils — Shared Utility Library
+ *
+ * This package is the single source of truth for shared logic across all
+ * PayFlow workers and services. Import from here, not from individual files.
+ *
+ * @example
+ * import { verifyXenditWebhook, generateIdempotencyKey, createInvoice } from "@payflow/utils";
  */
-export async function hmacSign(
-  secret: string,
-  payload: string
-): Promise<string> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(payload));
-  return Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
-/**
- * Verify a HMAC-SHA256 signature.
- */
-export async function hmacVerify(
-  secret: string,
-  payload: string,
-  signature: string
-): Promise<boolean> {
-  const expected = await hmacSign(secret, payload);
-  return timingSafeEqual(expected, signature);
-}
+// Security: HMAC signing and Xendit webhook verification
+export {
+  verifyXenditWebhook,
+  hmacSign,
+  hmacVerify,
+} from "./hmac.js";
 
-// ─── Idempotency ─────────────────────────────────────────────────────────────
+// Idempotency: prevent duplicate payments and requests
+export {
+  generateIdempotencyKey,
+  deterministicKey,
+} from "./idempotency.js";
 
-/**
- * Generate a deterministic idempotency key from a namespace + unique input.
- * Format: `{namespace}:{sha256(input).slice(0,16)}`
- */
-export async function idempotencyKey(
-  namespace: string,
-  input: string
-): Promise<string> {
-  const enc = new TextEncoder();
-  const hashBuf = await crypto.subtle.digest("SHA-256", enc.encode(input));
-  const hashHex = Array.from(new Uint8Array(hashBuf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, 16);
-  return `${namespace}:${hashHex}`;
-}
+// Xendit API: typed client for invoices and customers
+export {
+  createInvoice,
+  getInvoice,
+  expireInvoice,
+  createCustomer,
+  XenditError,
+} from "./xendit.js";
 
-// ─── Timing-safe string comparison ──────────────────────────────────────────
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
+export type {
+  CreateInvoiceInput,
+  XenditInvoice,
+  CreateCustomerInput,
+} from "./xendit.js";
 
 // ─── Currency helpers ────────────────────────────────────────────────────────
 
-/** Convert cents (integer) to a human-readable amount string. */
-export function formatCents(cents: number, currency = "usd"): string {
-  return new Intl.NumberFormat("en-US", {
+/**
+ * Format an integer amount to a human-readable currency string.
+ *
+ * NOTE: For IDR, Xendit uses full integer amounts (99000 = Rp 99.000).
+ * For USD, amounts are in cents (9900 = $99.00).
+ *
+ * @example
+ * formatAmount(99000, "IDR") // → "Rp 99.000"
+ * formatAmount(9900, "USD")  // → "$99.00"
+ */
+export function formatAmount(amount: number, currency = "IDR"): string {
+  const locale = currency === "IDR" ? "id-ID" : "en-US";
+  return new Intl.NumberFormat(locale, {
     style: "currency",
     currency: currency.toUpperCase(),
-  }).format(cents / 100);
+    minimumFractionDigits: 0,
+  }).format(amount);
 }
