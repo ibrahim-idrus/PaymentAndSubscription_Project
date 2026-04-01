@@ -1,3 +1,4 @@
+/// <reference types="@cloudflare/workers-types" />
 import { createDb } from "@payflow/db";
 
 export interface Env {

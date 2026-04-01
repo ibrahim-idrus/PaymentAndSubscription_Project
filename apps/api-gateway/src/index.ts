@@ -38,7 +38,7 @@ app.get("/api/subscriptions", async (c) => {
 // Payments
 app.get("/api/payments", async (c) => {
   const db = createDb(c.env.DATABASE_URL);
-  const payments = await db.query.payments.findMany();
+  const payments = await db.query.orders.findMany();
   return c.json(payments);
 });
 
