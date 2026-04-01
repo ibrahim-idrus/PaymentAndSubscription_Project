@@ -18,3 +18,7 @@ binding = "PAYMENT_QUEUE"
 [[queues.producers]]
 queue = "subscription-jobs"
 binding = "SUBSCRIPTION_QUEUE"
+
+[[queues.producers]]
+queue = "notification-jobs"
+binding = "NOTIFICATION_QUEUE"
