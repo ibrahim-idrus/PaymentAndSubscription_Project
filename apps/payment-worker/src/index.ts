@@ -27,7 +27,7 @@ export default {
             break;
 
           default:
-            console.warn("[payment-worker] Unknown job type:", job.type);
+            console.warn("[payment-worker] Unknown job type:", (job as { type: string }).type);
         }
 
         message.ack();

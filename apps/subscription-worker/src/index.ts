@@ -31,7 +31,7 @@ export default {
             break;
 
           default:
-            console.warn("[subscription-worker] Unknown job type:", job.type);
+            console.warn("[subscription-worker] Unknown job type:", (job as { type: string }).type);
         }
 
         message.ack();
