@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm add:*)",
+      "Bash(pnpm db:migrate)",
+      "Bash(node --env-file=.env -e \":*)",
+      "Bash(wrangler queues:*)",
+      "Bash(pnpm install:*)",
+      "Bash(wrangler deploy:*)",
+      "Read(//c/Users/baimi/OneDrive/Documents/A-project/**)",
+      "Bash(wrangler secret:*)"
+    ]
+  }
+}
