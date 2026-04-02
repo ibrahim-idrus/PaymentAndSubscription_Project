@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
+// Base URL backend (api-gateway). Bisa di-set lewat VITE_API_URL.
+// Default lokal: wrangler dev biasanya jalan di http://localhost:8787
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8787";
 
+// UI payment method (saat ini hanya untuk tampilan; belum dikirim ke backend)
 type PaymentMethod = "qris" | "va" | "ewallet" | "card";
 
 const paymentMethods: { id: PaymentMethod; icon: string; label: string }[] = [
@@ -15,6 +18,7 @@ const paymentMethods: { id: PaymentMethod; icon: string; label: string }[] = [
 export function CheckoutPage() {
   const navigate = useNavigate();
 
+  // Form state
   const [userId, setUserId]           = useState("");
   const [amount, setAmount]           = useState("1000");
   const [description, setDescription] = useState("PayFlow Test Payment");
@@ -22,10 +26,15 @@ export function CheckoutPage() {
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState<string | null>(null);
 
+  // Submit flow:
+  // 1) validasi input
+  // 2) call POST /api/checkout untuk membuat order (status pending)
+  // 3) redirect ke halaman status pembayaran berdasarkan orderId
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
+    // Validasi sederhana di client biar cepat kasih feedback ke user
     if (!userId.trim()) {
       setError("User ID is required.");
       return;
@@ -38,6 +47,7 @@ export function CheckoutPage() {
 
     setLoading(true);
     try {
+      // Panggil backend: membuat order + enqueue job pembayaran ke queue
       const res = await fetch(`${API_BASE}/api/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -55,6 +65,7 @@ export function CheckoutPage() {
         throw new Error(data.error?.message ?? "Failed to create order");
       }
 
+      // Setelah dapat orderId, pindah ke halaman status untuk polling/lihat paymentUrl (tergantung implementasi halaman status)
       navigate(`/payment/status/${data.orderId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");

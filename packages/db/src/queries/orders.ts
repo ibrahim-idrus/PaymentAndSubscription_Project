@@ -4,12 +4,17 @@ import type { Db } from "../index";
 
 export type Order = typeof orders.$inferSelect;
 
+// Query helpers untuk tabel `orders` + tabel terkait (webhook_events, audit_logs).
+// Dipakai oleh api-gateway (polling status) dan webhook-worker (update status setelah webhook).
+
 // ─── Read ────────────────────────────────────────────────────────────────────
 
+// Ambil 1 order berdasarkan primary key (orderId)
 export async function getOrderById(db: Db, id: string): Promise<Order | null> {
   return (await db.query.orders.findFirst({ where: eq(orders.id, id) })) ?? null;
 }
 
+// Ambil list order terbaru milik user tertentu (opsional untuk riwayat pembayaran)
 export async function getOrdersByUserId(
   db: Db,
   userId: string,
@@ -23,6 +28,7 @@ export async function getOrdersByUserId(
     .limit(limit);
 }
 
+// Ambil order berdasarkan xendit invoice id (dipakai webhook-worker untuk mapping event → order)
 export async function getOrderByXenditInvoiceId(
   db: Db,
   xenditInvoiceId: string
@@ -36,6 +42,8 @@ export async function getOrderByXenditInvoiceId(
 
 // ─── Write ───────────────────────────────────────────────────────────────────
 
+// Update status order. Status "pending" dibuat oleh api-gateway,
+// sedangkan status final ("paid/failed/expired") ditulis oleh webhook-worker.
 export async function updateOrderStatus(
   db: Db,
   orderId: string,
@@ -52,6 +60,8 @@ export async function updateOrderStatus(
     .where(eq(orders.id, orderId));
 }
 
+// Simpan event webhook yang masuk untuk idempotency/deduplication.
+// Tabel `webhook_events` memakai `id` sebagai primary key (unik per event).
 export async function insertWebhookEvent(
   db: Db,
   data: {
@@ -69,6 +79,7 @@ export async function insertWebhookEvent(
   });
 }
 
+// Simpan audit log perubahan status (opsional untuk debugging/compliance)
 export async function insertAuditLog(
   db: Db,
   data: {

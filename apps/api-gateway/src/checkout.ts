@@ -1,3 +1,5 @@
+// Kegunaan code ini untuk bikin order + enqueue job ke queue.
+
 /// <reference types="@cloudflare/workers-types" />
 import { Hono } from "hono";
 import { createDb, orders, users } from "@payflow/db";
