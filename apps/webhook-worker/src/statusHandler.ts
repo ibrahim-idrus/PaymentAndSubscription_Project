@@ -11,16 +11,23 @@ import { verifyXenditWebhook } from "@payflow/utils";
 
 type Env = {
   Bindings: {
+    // Connection string Neon/Postgres
     DATABASE_URL: string;
+    // Token validasi webhook dari Xendit (dibandingkan dengan header x-callback-token)
     XENDIT_WEBHOOK_TOKEN: string;
+    // Side effects setelah pembayaran sukses
     NOTIFICATION_QUEUE: Queue;
     SUBSCRIPTION_QUEUE: Queue;
   };
 };
 
+// Bentuk payload webhook invoice dari Xendit (kita pakai sebagian field saja)
 type XenditBody = {
+  // invoice id (unik per invoice) - dipakai untuk mapping ke orders.xenditInvoiceId
   id: string;
+  // status invoice dari Xendit
   status: "PAID" | "EXPIRED" | "FAILED" | string;
+  // external_id (di sistem ini = idempotency key order, dibuat saat checkout)
   external_id: string;
   amount?: number;
   paid_at?: string;
@@ -28,6 +35,7 @@ type XenditBody = {
   [key: string]: unknown;
 };
 
+// Status terminal: kalau order sudah final, jangan diubah lagi
 const FINAL_STATUSES = ["paid", "failed", "expired"] as const;
 
 function mapEventType(
@@ -44,10 +52,11 @@ function mapOrderStatus(status: string): "paid" | "expired" | "failed" {
   return "failed";
 }
 
+// Route handler khusus webhook HTTP dari Xendit
 const app = new Hono<Env>();
 
 app.post("/webhook/xendit", async (c) => {
-  // Step 1 — Verify token
+  // Step 1 — Verify token (wajib supaya tidak bisa di-spam orang lain)
   const token = c.req.header("x-callback-token") ?? "";
   if (!verifyXenditWebhook(token, c.env.XENDIT_WEBHOOK_TOKEN)) {
     return c.json({ error: "Unauthorized" }, 401);
@@ -59,7 +68,8 @@ app.post("/webhook/xendit", async (c) => {
 
   const db = createDb(c.env.DATABASE_URL);
 
-  // Step 3 — Deduplication (mandatory)
+  // Step 3 — Deduplication / idempotency:
+  // Xendit bisa mengirim event yang sama lebih dari sekali, jadi kita simpan event id ke tabel webhook_events.
   try {
     await insertWebhookEvent(db, {
       id: body.id,
@@ -73,24 +83,25 @@ app.post("/webhook/xendit", async (c) => {
     return c.json({ ok: true });
   }
 
-  // Step 4 — Find order
+  // Step 4 — Find order:
+  // Setelah payment-worker membuat invoice, ia menyimpan invoice.id ke orders.xenditInvoiceId.
   const order = await getOrderByXenditInvoiceId(db, body.id);
   if (!order) {
     console.error("[statusHandler] Order not found for invoice:", body.id);
     return c.json({ error: "Order not found" }, 404);
   }
 
-  // Step 5 — Safety: skip if already in final state
+  // Step 5 — Safety: skip jika sudah status final (hindari status "bolak-balik" karena event terlambat)
   if ((FINAL_STATUSES as readonly string[]).includes(order.status)) {
     console.log("[statusHandler] Order already final, skipping:", order.id, order.status);
     return c.json({ ok: true });
   }
 
-  // Step 6 — Map and update status
+  // Step 6 — Map status dari Xendit → status internal kita, lalu update orders.status
   const newStatus = mapOrderStatus(body.status);
   await updateOrderStatus(db, order.id, newStatus, body.paid_at);
 
-  // Step 7 — Audit log
+  // Step 7 — Audit log: catat perubahan status untuk trace/debug
   await insertAuditLog(db, {
     entityType: "order",
     entityId: order.id,
@@ -101,7 +112,7 @@ app.post("/webhook/xendit", async (c) => {
     webhookEventId: body.id,
   });
 
-  // Step 8 — Notify if paid
+  // Step 8 — Side effects jika paid
   if (newStatus === "paid") {
     await c.env.NOTIFICATION_QUEUE.send({
       type: "email_payment_success",
@@ -109,7 +120,7 @@ app.post("/webhook/xendit", async (c) => {
       userId: order.userId,
     });
 
-    // Step 9 — Activate subscription if this order is linked to one
+    // Step 9 — Kalau order terkait subscription, trigger aktivasi subscription
     if (order.subscriptionId) {
       await c.env.SUBSCRIPTION_QUEUE.send({
         type: "activate",
@@ -123,4 +134,5 @@ app.post("/webhook/xendit", async (c) => {
   return c.json({ ok: true });
 });
 
+// Export Hono app untuk di-mount oleh `apps/webhook-worker/src/index.ts`
 export default app;

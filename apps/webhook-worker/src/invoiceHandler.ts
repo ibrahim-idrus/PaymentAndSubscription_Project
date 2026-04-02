@@ -2,26 +2,38 @@
 import { createDb, webhookEvents, orders, auditLogs } from "@payflow/db";
 import { eq } from "drizzle-orm";
 
+// Env minimum untuk memproses event webhook yang datang dari queue (webhook-jobs)
 export interface InvoiceHandlerEnv {
+  // Connection string Neon/Postgres
   DATABASE_URL: string;
+  // Side effects setelah pembayaran sukses
   NOTIFICATION_QUEUE: Queue;
   SUBSCRIPTION_QUEUE: Queue;
 }
 
+// Bentuk message body yang dikirim ke queue webhook-jobs (event invoice dari Xendit)
 type XenditInvoiceEvent = {
+  // invoice id di Xendit
   id: string;
+  // external_id (di sistem ini = idempotency key)
   external_id: string;
   status: "PAID" | "EXPIRED" | "FAILED" | string;
   paid_at?: string;
   [key: string]: unknown;
 };
 
+// Map status Xendit → status internal order
 const statusMap: Record<string, "paid" | "expired" | "failed"> = {
   PAID: "paid",
   EXPIRED: "expired",
   FAILED: "failed",
 };
 
+// Handler untuk memproses 1 event invoice:
+// - deduplicate via webhook_events
+// - update orders.status
+// - write audit log
+// - enqueue side effects (notification + subscription activation)
 export async function handleInvoiceEvent(
   msg: Message<XenditInvoiceEvent>,
   env: InvoiceHandlerEnv

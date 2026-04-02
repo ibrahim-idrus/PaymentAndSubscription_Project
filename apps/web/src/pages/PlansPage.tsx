@@ -1,49 +1,21 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 
-const plans = [
-  {
-    id: "starter",
-    name: "Starter",
-    price: { monthly: "IDR 99,000", yearly: "IDR 79,000" },
-    trial: "14-day trial",
-    featured: false,
-    features: [
-      "Up to 100 transactions/month",
-      "QRIS & Virtual Account",
-      "Email receipts",
-      "Basic analytics",
-    ],
-    cta: "Get Started",
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: { monthly: "IDR 299,000", yearly: "IDR 249,000" },
-    trial: "7-day trial",
-    featured: true,
-    features: [
-      "Unlimited transactions",
-      "All payment methods",
-      "PDF receipts stored 1 year",
-      "Full analytics dashboard",
-      "Priority support",
-      "Custom domain",
-    ],
-    cta: "Subscribe Now",
-  },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    price: { monthly: "Custom", yearly: "Custom" },
-    trial: null,
-    featured: false,
-    features: [],
-    cta: "Contact Sales",
-  },
-];
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8787";
+
+interface Plan {
+  id: string;
+  name: string;
+  description: string | null;
+  price: string;
+  currency: string;
+  billingCycle: "monthly" | "yearly";
+  trialDays: number;
+  isActive: boolean;
+  metadata: unknown;
+}
 
 const faqs = [
   {
@@ -64,10 +36,77 @@ const faqs = [
   },
 ];
 
+function formatPrice(price: string, currency: string) {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 0,
+  }).format(Number(price));
+}
+
 export function PlansPage() {
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const navigate = useNavigate();
+
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(true);
+  const [plansError, setPlansError] = useState<string | null>(null);
+
+  // Subscribe modal state
+  const [modalPlan, setModalPlan] = useState<Plan | null>(null);
+  const [userId, setUserId] = useState(() => localStorage.getItem("payflow_user_id") ?? "");
+  const [subscribing, setSubscribing] = useState(false);
+  const [subscribeError, setSubscribeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/plans`)
+      .then((r) => r.json())
+      .then((body: { data?: Plan[]; error?: { message: string } }) => {
+        if (body.error) throw new Error(body.error.message);
+        setPlans(body.data ?? []);
+      })
+      .catch((e) => setPlansError(e.message))
+      .finally(() => setLoadingPlans(false));
+  }, []);
+
+  const visiblePlans = plans.filter((p) => p.billingCycle === billing);
+
+  async function handleSubscribe() {
+    if (!modalPlan) return;
+    const uid = userId.trim();
+    if (!uid) {
+      setSubscribeError("Please enter your User ID.");
+      return;
+    }
+    setSubscribing(true);
+    setSubscribeError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/subscriptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: uid, planId: modalPlan.id }),
+      });
+      const data = await res.json() as {
+        data?: { subscription: { id: string }; orderId: string | null };
+        error?: { message: string };
+      };
+      if (!res.ok) throw new Error(data.error?.message ?? "Subscribe failed");
+
+      localStorage.setItem("payflow_user_id", uid);
+      setModalPlan(null);
+
+      if (data.data?.orderId) {
+        navigate(`/payment/status/${data.data.orderId}`);
+      } else {
+        navigate("/subscription");
+      }
+    } catch (e) {
+      setSubscribeError(e instanceof Error ? e.message : "Subscribe failed");
+    } finally {
+      setSubscribing(false);
+    }
+  }
 
   return (
     <div className="bg-surface text-on-surface min-h-dvh">
@@ -85,7 +124,7 @@ export function PlansPage() {
             include our core secure payment infrastructure.
           </p>
 
-          {/* Toggle */}
+          {/* Billing toggle */}
           <div className="flex flex-col items-center gap-4 mt-12">
             <div className="inline-flex items-center p-1 bg-surface-container-high rounded-full">
               <button
@@ -126,120 +165,97 @@ export function PlansPage() {
         </div>
 
         {/* Plan Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-stretch max-w-6xl mx-auto">
-          {plans.map((plan) =>
-            plan.id === "enterprise" ? (
-              <div
-                key={plan.id}
-                className="group relative bg-surface-container-high/50 rounded-3xl p-8 flex flex-col border border-dashed border-zinc-300"
-              >
-                <div className="mb-8">
-                  <h3 className="text-lg font-bold text-on-surface-variant mb-2">
-                    {plan.name}
-                  </h3>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-bold text-on-surface">
-                      Custom
-                    </span>
-                  </div>
-                  <p className="mt-4 text-sm text-on-surface-variant">
-                    Tailored for large organizations with complex billing needs.
-                  </p>
-                </div>
-                <div className="flex-grow space-y-6">
-                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                    <span className="material-symbols-outlined text-primary text-3xl">
-                      corporate_fare
-                    </span>
-                  </div>
-                  <p className="text-sm leading-relaxed text-on-surface-variant">
-                    Includes dedicated account manager, custom API integrations,
-                    and SLA-backed uptime.
-                  </p>
-                </div>
-                <button className="w-full py-4 mt-8 rounded-xl bg-white border border-zinc-200 text-on-surface font-bold text-sm hover:bg-zinc-50 transition-colors">
-                  Contact Sales
-                </button>
-              </div>
-            ) : (
-              <div
-                key={plan.id}
-                className={`group relative bg-surface-container-lowest rounded-3xl p-8 flex flex-col transition-all overflow-hidden ${
-                  plan.featured
-                    ? "ring-2 ring-primary shadow-2xl shadow-primary/10 scale-105 z-10"
-                    : "border border-transparent hover:bg-white hover:shadow-xl hover:shadow-zinc-200/50"
-                }`}
-              >
-                {plan.featured && (
-                  <div className="absolute top-0 right-0">
-                    <div className="bg-primary text-white text-[10px] font-black uppercase tracking-widest py-2 px-10 rotate-45 translate-x-10 translate-y-2">
-                      Most Popular
-                    </div>
-                  </div>
-                )}
-                <div className="mb-8">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3
-                      className={`text-lg font-bold ${plan.featured ? "text-primary" : "text-on-surface-variant"}`}
-                    >
-                      {plan.name}
-                    </h3>
-                    {plan.featured && (
-                      <span
-                        className="material-symbols-outlined text-primary text-lg"
-                        style={{ fontVariationSettings: "'FILL' 1" }}
-                      >
-                        verified
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-bold font-mono text-on-surface">
-                      {plan.price[billing]}
-                    </span>
-                    <span className="text-on-surface-variant text-sm">/mo</span>
-                  </div>
-                  {plan.trial && (
-                    <p className="mt-4 text-sm text-on-secondary-container bg-secondary-container/30 inline-block px-3 py-1 rounded-lg font-medium">
-                      {plan.trial}
-                    </p>
-                  )}
-                </div>
-                <ul className="space-y-4 flex-grow mb-8">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-3">
-                      <span
-                        className="material-symbols-outlined text-primary text-xl"
-                        style={
-                          plan.featured
-                            ? { fontVariationSettings: "'FILL' 1" }
-                            : undefined
-                        }
-                      >
-                        check_circle
-                      </span>
-                      <span
-                        className={`text-sm ${plan.featured ? "text-on-surface font-medium" : "text-on-surface-variant"}`}
-                      >
-                        {f}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  onClick={() => navigate("/checkout")}
-                  className={`w-full py-4 rounded-xl font-bold text-sm transition-all active:scale-95 duration-200 ${
-                    plan.featured
-                      ? "bg-gradient-to-b from-primary to-primary-container text-white shadow-lg shadow-primary/20 hover:brightness-110"
-                      : "bg-surface-container-highest text-on-surface hover:bg-surface-dim"
+        {loadingPlans ? (
+          <div className="flex items-center justify-center py-20 gap-3 text-on-surface-variant">
+            <svg className="animate-spin h-6 w-6" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+            <span className="text-sm">Loading plans…</span>
+          </div>
+        ) : plansError ? (
+          <div className="flex items-center justify-center py-20 text-red-600 gap-2">
+            <span className="material-symbols-outlined">error</span>
+            <span className="text-sm">{plansError}</span>
+          </div>
+        ) : visiblePlans.length === 0 ? (
+          <div className="text-center py-20 text-on-surface-variant text-sm">
+            No {billing} plans available.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-stretch max-w-6xl mx-auto">
+            {visiblePlans.map((plan, idx) => {
+              const featured = idx === 1 || (visiblePlans.length === 1);
+              return (
+                <div
+                  key={plan.id}
+                  className={`group relative bg-surface-container-lowest rounded-3xl p-8 flex flex-col transition-all overflow-hidden ${
+                    featured
+                      ? "ring-2 ring-primary shadow-2xl shadow-primary/10 scale-105 z-10"
+                      : "border border-transparent hover:bg-white hover:shadow-xl hover:shadow-zinc-200/50"
                   }`}
                 >
-                  {plan.cta}
-                </button>
-              </div>
-            )
-          )}
-        </div>
+                  {featured && (
+                    <div className="absolute top-0 right-0">
+                      <div className="bg-primary text-white text-[10px] font-black uppercase tracking-widest py-2 px-10 rotate-45 translate-x-10 translate-y-2">
+                        Most Popular
+                      </div>
+                    </div>
+                  )}
+                  <div className="mb-8">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3
+                        className={`text-lg font-bold ${featured ? "text-primary" : "text-on-surface-variant"}`}
+                      >
+                        {plan.name}
+                      </h3>
+                      {featured && (
+                        <span
+                          className="material-symbols-outlined text-primary text-lg"
+                          style={{ fontVariationSettings: "'FILL' 1" }}
+                        >
+                          verified
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-3xl font-bold font-mono text-on-surface">
+                        {formatPrice(plan.price, plan.currency)}
+                      </span>
+                      <span className="text-on-surface-variant text-sm">/mo</span>
+                    </div>
+                    {plan.trialDays > 0 && (
+                      <p className="mt-4 text-sm text-on-secondary-container bg-secondary-container/30 inline-block px-3 py-1 rounded-lg font-medium">
+                        {plan.trialDays}-day free trial
+                      </p>
+                    )}
+                    {plan.description && (
+                      <p className="mt-3 text-sm text-on-surface-variant leading-relaxed">
+                        {plan.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex-grow" />
+
+                  <button
+                    onClick={() => {
+                      setModalPlan(plan);
+                      setSubscribeError(null);
+                    }}
+                    className={`w-full py-4 rounded-xl font-bold text-sm transition-all active:scale-95 duration-200 ${
+                      featured
+                        ? "bg-gradient-to-b from-primary to-primary-container text-white shadow-lg shadow-primary/20 hover:brightness-110"
+                        : "bg-surface-container-highest text-on-surface hover:bg-surface-dim"
+                    }`}
+                  >
+                    {plan.trialDays > 0 ? "Start Free Trial" : "Subscribe Now"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* FAQ */}
         <section className="mt-32 max-w-3xl mx-auto">
@@ -259,9 +275,7 @@ export function PlansPage() {
                   <span className="font-bold text-on-surface">{faq.q}</span>
                   <span
                     className="material-symbols-outlined text-on-surface-variant transition-transform duration-200"
-                    style={
-                      openFaq === i ? { transform: "rotate(180deg)" } : undefined
-                    }
+                    style={openFaq === i ? { transform: "rotate(180deg)" } : undefined}
                   >
                     expand_more
                   </span>
@@ -306,6 +320,69 @@ export function PlansPage() {
       </footer>
 
       <BottomNav />
+
+      {/* Subscribe Modal */}
+      {modalPlan && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setModalPlan(null); }}
+        >
+          <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl space-y-5">
+            <div>
+              <h3 className="text-xl font-bold text-on-surface mb-1">Subscribe to {modalPlan.name}</h3>
+              <p className="text-sm text-on-surface-variant">
+                {formatPrice(modalPlan.price, modalPlan.currency)}/{modalPlan.billingCycle}
+                {modalPlan.trialDays > 0 && ` · ${modalPlan.trialDays}-day free trial`}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">
+                Your User ID
+              </label>
+              <input
+                type="text"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40 focus:border-[#16A34A] bg-white transition"
+              />
+              <p className="text-xs text-on-surface-variant">
+                Don't have one?{" "}
+                <button
+                  className="text-primary underline"
+                  onClick={() => { setModalPlan(null); navigate("/checkout"); }}
+                >
+                  Create via checkout first
+                </button>
+              </p>
+            </div>
+
+            {subscribeError && (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+                <span className="material-symbols-outlined text-base mt-0.5">error</span>
+                {subscribeError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setModalPlan(null)}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-on-surface-variant hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubscribe}
+                disabled={subscribing}
+                className="flex-1 py-3 rounded-xl bg-[#16A34A] hover:bg-[#15803d] text-white font-bold text-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {subscribing ? "Processing…" : modalPlan.trialDays > 0 ? "Start Trial" : "Subscribe"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
