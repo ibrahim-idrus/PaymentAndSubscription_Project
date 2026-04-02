@@ -1,269 +1,211 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Header } from "@/components/layout/Header";
+
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8787";
 
 type PaymentMethod = "qris" | "va" | "ewallet" | "card";
 
 const paymentMethods: { id: PaymentMethod; icon: string; label: string }[] = [
-  { id: "qris", icon: "qr_code_2", label: "QRIS" },
-  { id: "va", icon: "account_balance", label: "Virtual Account" },
-  { id: "ewallet", icon: "account_balance_wallet", label: "E-Wallet" },
-  { id: "card", icon: "credit_card", label: "Card" },
-];
-
-const trustSignals = [
-  { icon: "verified_user", label: "256-bit SSL encryption" },
-  { icon: "shield_with_heart", label: "Secured by Xendit" },
-  { icon: "event_repeat", label: "Cancel anytime" },
+  { id: "qris",   icon: "qr_code_2",             label: "QRIS"            },
+  { id: "va",     icon: "account_balance",        label: "Virtual Account" },
+  { id: "ewallet",icon: "account_balance_wallet", label: "E-Wallet"       },
+  { id: "card",   icon: "credit_card",            label: "Card"           },
 ];
 
 export function CheckoutPage() {
-  const [method, setMethod] = useState<PaymentMethod>("qris");
-  const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
 
-  function handleSubmit(e: React.FormEvent) {
+  const [userId, setUserId]           = useState("");
+  const [amount, setAmount]           = useState("1000");
+  const [description, setDescription] = useState("PayFlow Test Payment");
+  const [method, setMethod]           = useState<PaymentMethod>("qris");
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSuccess(true);
-    setTimeout(() => navigate("/status"), 2000);
+    setError(null);
+
+    if (!userId.trim()) {
+      setError("User ID is required.");
+      return;
+    }
+    const parsedAmount = Number(amount);
+    if (!parsedAmount || parsedAmount <= 0) {
+      setError("Amount must be a positive number.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: userId.trim(),
+          amount: parsedAmount,
+          currency: "IDR",
+          description: description.trim() || "PayFlow Payment",
+        }),
+      });
+
+      const data = await res.json() as { orderId?: string; error?: { message: string } };
+
+      if (!res.ok || !data.orderId) {
+        throw new Error(data.error?.message ?? "Failed to create order");
+      }
+
+      navigate(`/payment/status/${data.orderId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <div className="bg-surface text-on-surface min-h-dvh selection:bg-primary-container selection:text-white">
-      <Header variant="checkout" />
+    <div className="min-h-dvh bg-[#FAFAFA] text-gray-900 flex items-center justify-center px-4 py-16">
+      <div className="w-full max-w-[480px]">
 
-      <main className="pt-16 pb-24 md:pt-24 max-w-4xl mx-auto px-4 sm:px-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Order Summary */}
-          <section className="lg:col-span-5 lg:order-2">
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-bold font-headline tracking-tight">
-                  Order Summary
-                </h2>
-                <span className="bg-[#DCFCE7] text-[#14532D] px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                  14-Day Free Trial
-                </span>
-              </div>
-
-              {/* Product */}
-              <div className="flex gap-4 mb-8">
-                <div className="w-16 h-16 bg-surface-container-high rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="material-symbols-outlined text-primary text-3xl">
-                    workspace_premium
-                  </span>
-                </div>
-                <div className="flex-1">
-                  <p className="font-bold text-on-surface">Pro Plan — Monthly</p>
-                  <p className="text-sm text-on-surface-variant">
-                    Access to all premium features
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono font-medium">IDR 299,000</p>
-                </div>
-              </div>
-
-              {/* Price Breakdown */}
-              <div className="space-y-3 mb-8">
-                <div className="flex justify-between text-sm text-on-surface-variant">
-                  <span>Pro Plan subscription</span>
-                  <span className="font-mono">IDR 299,000</span>
-                </div>
-                <div className="flex justify-between text-sm text-primary font-medium">
-                  <span>14-day free trial</span>
-                  <span className="font-mono">— IDR 299,000</span>
-                </div>
-              </div>
-
-              {/* Totals */}
-              <div className="border-t border-surface-variant pt-4 space-y-4">
-                <div className="flex justify-between items-end">
-                  <div>
-                    <p className="text-xs font-bold text-on-surface-variant uppercase tracking-tighter">
-                      Due today
-                    </p>
-                    <p className="text-3xl font-black font-headline text-primary font-mono">
-                      IDR 0
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-on-surface-variant">
-                      After trial (Apr 10)
-                    </p>
-                    <p className="text-sm font-bold font-mono">IDR 299,000/mo</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Trust Signals */}
-              <div className="mt-8 pt-6 border-t border-surface-variant flex flex-col gap-3">
-                {trustSignals.map(({ icon, label }) => (
-                  <div
-                    key={label}
-                    className="flex items-center gap-2 text-[10px] text-on-surface-variant font-medium uppercase tracking-widest"
-                  >
-                    <span className="material-symbols-outlined text-xs">
-                      {icon}
-                    </span>
-                    {label}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Payment Form */}
-          <section className="lg:col-span-7 lg:order-1">
-            <div className="mb-10">
-              <h1 className="text-3xl font-black font-headline tracking-tight mb-2">
-                Complete your order
-              </h1>
-              <p className="text-on-surface-variant">
-                Start your 14-day trial. No charge today.
-              </p>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-10">
-              {/* Email */}
-              <div className="relative group">
-                <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 px-1">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  readOnly
-                  defaultValue="user@example.com"
-                  className="w-full bg-transparent border-0 border-b border-surface-variant/20 focus:border-primary focus:ring-0 px-1 py-3 transition-all duration-300 font-medium outline-none"
-                />
-                <div className="absolute right-2 top-9">
-                  <span
-                    className="material-symbols-outlined text-primary text-sm"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    check_circle
-                  </span>
-                </div>
-              </div>
-
-              {/* Payment Method Tabs */}
-              <div>
-                <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-4 px-1">
-                  Payment Method
-                </label>
-                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-                  {paymentMethods.map((pm) => (
-                    <button
-                      key={pm.id}
-                      type="button"
-                      onClick={() => setMethod(pm.id)}
-                      className={`flex-shrink-0 flex items-center gap-2 px-6 py-3 rounded-xl transition-all active:scale-95 duration-200 ${
-                        method === pm.id
-                          ? "bg-primary text-white shadow-sm"
-                          : "bg-surface-container-high text-on-surface hover:bg-surface-container-highest"
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-sm">
-                        {pm.icon}
-                      </span>
-                      <span className="text-sm font-bold">{pm.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* QRIS Panel */}
-              {method === "qris" && (
-                <div className="bg-surface-container-low rounded-2xl p-8 flex flex-col items-center justify-center text-center animate-[fadeIn_0.4s_ease-out_forwards]">
-                  <div className="relative group cursor-pointer mb-6">
-                    <div className="absolute -inset-1 bg-gradient-to-r from-primary to-secondary rounded-2xl blur opacity-10 group-hover:opacity-20 transition duration-1000" />
-                    <div className="relative w-52 h-52 bg-white rounded-xl shadow-inner flex items-center justify-center p-4">
-                      <span className="material-symbols-outlined text-8xl text-surface-container-high">
-                        qr_code_2
-                      </span>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-lg shadow-sm border border-surface-variant/20">
-                          <p className="text-[10px] font-bold text-primary uppercase tracking-widest">
-                            Code appears on confirm
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-sm font-medium text-on-surface mb-2">
-                    Scan with GoPay, OVO, Dana, ShopeePay, etc.
-                  </p>
-                  <p className="text-xs text-on-surface-variant max-w-[240px]">
-                    A unique QRIS code will be generated once you click the
-                    button below.
-                  </p>
-                </div>
-              )}
-
-              {/* Other method placeholder */}
-              {method !== "qris" && (
-                <div className="bg-surface-container-low rounded-2xl p-8 text-center">
-                  <span className="material-symbols-outlined text-4xl text-on-surface-variant">
-                    {paymentMethods.find((p) => p.id === method)?.icon}
-                  </span>
-                  <p className="mt-4 text-sm text-on-surface-variant">
-                    {method === "va" && "Select your bank to get a virtual account number."}
-                    {method === "ewallet" && "Select your e-wallet to continue."}
-                    {method === "card" && "Enter your card details to proceed."}
-                  </p>
-                </div>
-              )}
-
-              {/* CTA */}
-              <div className="space-y-6">
-                <button
-                  type="submit"
-                  className="w-full bg-gradient-to-b from-[#16A34A] to-[#00873a] text-white py-5 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl active:scale-[0.98] transition-all duration-300"
-                >
-                  Start Free Trial
-                </button>
-                <p className="text-center text-xs text-on-surface-variant leading-relaxed px-4">
-                  By continuing you agree to our{" "}
-                  <a href="#" className="text-primary font-bold hover:underline">
-                    Terms of Service
-                  </a>{" "}
-                  and{" "}
-                  <a href="#" className="text-primary font-bold hover:underline">
-                    Privacy Policy
-                  </a>
-                  .
-                </p>
-              </div>
-            </form>
-          </section>
+        {/* Logo */}
+        <div className="flex items-center gap-2 mb-10">
+          <div className="w-8 h-8 bg-[#16A34A] rounded-lg flex items-center justify-center">
+            <span className="material-symbols-outlined text-white text-base">payments</span>
+          </div>
+          <span className="font-bold text-lg tracking-tight">PayFlow</span>
         </div>
-      </main>
 
-      {/* Success Overlay */}
-      {success && (
-        <div className="fixed inset-0 z-[100] bg-surface/95 backdrop-blur-md flex items-center justify-center px-6">
-          <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-sm w-full text-center border border-primary/10">
-            <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
-              <span
-                className="material-symbols-outlined text-primary text-4xl"
-                style={{ fontVariationSettings: "'wght' 700" }}
-              >
-                check
+        <h1 className="text-2xl font-bold tracking-tight mb-1">One-Time Payment</h1>
+        <p className="text-sm text-gray-500 mb-8">
+          Powered by Xendit · Test Mode · No real money charged
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+
+          {/* User ID */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">
+              Your User ID
+            </label>
+            <input
+              type="text"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40 focus:border-[#16A34A] bg-white transition"
+            />
+          </div>
+
+          {/* Amount */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">
+              Amount (IDR)
+            </label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">
+                Rp
               </span>
-            </div>
-            <h3 className="text-2xl font-black font-headline mb-2">
-              Welcome to Pro
-            </h3>
-            <p className="text-on-surface-variant mb-8">
-              Your 14-day free trial has started. Redirecting to your
-              dashboard...
-            </p>
-            <div className="w-full h-1 bg-surface-container rounded-full overflow-hidden">
-              <div className="h-full bg-primary w-1/3 rounded-full" />
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                min="1000"
+                step="1000"
+                className="w-full border border-gray-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40 focus:border-[#16A34A] bg-white transition"
+              />
             </div>
           </div>
-        </div>
-      )}
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">
+              Description <span className="normal-case font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Payment description"
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A]/40 focus:border-[#16A34A] bg-white transition"
+            />
+          </div>
+
+          {/* Payment Method (display only — actual method chosen on Xendit page) */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
+              Preferred Method
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {paymentMethods.map((pm) => (
+                <button
+                  key={pm.id}
+                  type="button"
+                  onClick={() => setMethod(pm.id)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95 ${
+                    method === pm.id
+                      ? "bg-[#16A34A] text-white border-[#16A34A] shadow-sm"
+                      : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">{pm.icon}</span>
+                  {pm.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              All methods available on the Xendit payment page.
+            </p>
+          </div>
+
+          {/* Order summary */}
+          <div className="bg-white border border-gray-100 rounded-2xl p-5">
+            <div className="flex justify-between items-center text-sm mb-3">
+              <span className="text-gray-500">Amount</span>
+              <span className="font-bold font-mono text-gray-900">
+                Rp {Number(amount || 0).toLocaleString("id-ID")}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-sm border-t border-gray-100 pt-3">
+              <span className="text-gray-500">Currency</span>
+              <span className="font-semibold text-gray-700">IDR</span>
+            </div>
+          </div>
+
+          {/* Error message */}
+          {error && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+              <span className="material-symbols-outlined text-base mt-0.5">error</span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-[#16A34A] hover:bg-[#15803d] disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl text-base shadow-sm hover:shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Creating order…
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-base">lock</span>
+                Pay Now · Rp {Number(amount || 0).toLocaleString("id-ID")}
+              </>
+            )}
+          </button>
+
+          <p className="text-center text-xs text-gray-400">
+            Secured by Xendit · 256-bit SSL encryption
+          </p>
+        </form>
+      </div>
     </div>
   );
 }
