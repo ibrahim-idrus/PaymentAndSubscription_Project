@@ -1,6 +1,9 @@
 /// <reference types="@cloudflare/workers-types" />
 import { activateSubscription, ActivateHandlerEnv } from "./activateHandler";
 
+// subscription-worker adalah consumer untuk queue "subscription-jobs".
+// Trigger utamanya datang dari webhook-worker setelah pembayaran sukses:
+// { type: "activate", subscriptionId, userId }
 export interface Env extends ActivateHandlerEnv {
   DATABASE_URL: string;
   NOTIFICATION_QUEUE: Queue;
@@ -22,10 +25,12 @@ export default {
             await activateSubscription(message as Message<any>, env);
             break;
           case "cancel":
+            // TODO: implement cancel logic in DB
             console.log("[subscription-worker] Cancelling subscription:", job.subscriptionId);
             message.ack();
             break;
           case "renew":
+            // TODO: implement renew logic (extend period) in DB
             console.log("[subscription-worker] Renewing subscription:", job.subscriptionId);
             message.ack();
             break;

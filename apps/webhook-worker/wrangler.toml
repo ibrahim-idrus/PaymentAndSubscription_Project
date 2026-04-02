@@ -8,8 +8,9 @@ compatibility_flags = ["nodejs_compat"]
 
 [[queues.consumers]]
 queue = "webhook-jobs"
-max_batch_size = 10
-max_batch_timeout = 5
+max_batch_size = 20
+max_batch_timeout = 15
+max_retries = 3
 
 [[queues.producers]]
 queue = "payment-jobs"

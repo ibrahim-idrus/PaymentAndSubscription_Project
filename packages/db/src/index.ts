@@ -10,3 +10,6 @@ export function createDb(databaseUrl: string) {
 export type Db = ReturnType<typeof createDb>;
 
 export * from "./schema";
+export * from "./queries/orders";
+export * from "./queries/plans";
+export * from "./queries/subscriptions";

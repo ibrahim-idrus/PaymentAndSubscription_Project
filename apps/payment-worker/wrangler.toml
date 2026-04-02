@@ -8,8 +8,9 @@ compatibility_flags = ["nodejs_compat"]
 
 [[queues.consumers]]
 queue = "payment-jobs"
-max_batch_size = 10
+max_batch_size = 5
 max_batch_timeout = 5
+max_retries = 4
 
 [[queues.producers]]
 queue = "subscription-jobs"
