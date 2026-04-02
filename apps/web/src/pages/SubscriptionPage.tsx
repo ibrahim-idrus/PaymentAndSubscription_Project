@@ -3,6 +3,9 @@ import { NavLink, useNavigate } from "react-router";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 
+// Base URL backend (api-gateway). Endpoint yang dipakai:
+// - GET /api/subscriptions/user/:userId (load subscription + plan + billing history)
+// - POST /api/subscriptions/:id/cancel (schedule cancellation)
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8787";
 
 interface Plan {
@@ -74,6 +77,7 @@ const ORDER_STATUS_BADGE: Record<string, string> = {
 export function SubscriptionPage() {
   const navigate = useNavigate();
 
+  // UserId disimpan di localStorage dari flow subscribe (PlansPage) / input manual
   const [userId, setUserId] = useState(() => localStorage.getItem("payflow_user_id") ?? "");
   const [inputId, setInputId] = useState(userId);
 
@@ -90,6 +94,7 @@ export function SubscriptionPage() {
     setLoading(true);
     setError(null);
     try {
+      // Backend mengembalikan: subscription aktif + plan + billingHistory (orders)
       const res = await fetch(`${API_BASE}/api/subscriptions/user/${uid}`);
       const data = await res.json() as {
         data: { subscription: Subscription; plan: Plan } | null;
@@ -118,6 +123,7 @@ export function SubscriptionPage() {
     e.preventDefault();
     const uid = inputId.trim();
     if (!uid) return;
+    // Simpan supaya halaman lain (PlansPage) bisa reuse userId
     localStorage.setItem("payflow_user_id", uid);
     setUserId(uid);
   }
@@ -127,6 +133,7 @@ export function SubscriptionPage() {
     setCancelling(true);
     setCancelError(null);
     try {
+      // Cancel subscription = schedule cancelAtPeriodEnd di backend
       const res = await fetch(`${API_BASE}/api/subscriptions/${subscription.id}/cancel`, {
         method: "POST",
       });

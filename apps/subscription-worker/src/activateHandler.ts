@@ -7,13 +7,20 @@ import {
   insertAuditLog,
 } from "@payflow/db";
 
+// Env minimum untuk aktivasi subscription setelah pembayaran sukses.
 export interface ActivateHandlerEnv {
+  // Connection string Neon/Postgres
   DATABASE_URL: string;
+  // Side effect: kirim email/notifikasi setelah subscription aktif
   NOTIFICATION_QUEUE: Queue;
 }
 
+// Message dari queue "subscription-jobs"
 type ActivateJob = { type: "activate"; subscriptionId: string; userId: string };
 
+// Aktivasi subscription:
+// - dipanggil oleh subscription-worker saat menerima job { type: "activate" }
+// - biasanya job ini di-enqueue oleh webhook-worker ketika order berubah jadi "paid"
 export async function activateSubscription(
   msg: Message<ActivateJob>,
   env: ActivateHandlerEnv
@@ -29,12 +36,14 @@ export async function activateSubscription(
       return;
     }
 
+    // Idempotent: kalau sudah active, jangan diubah lagi
     if (sub.status === "active") {
       console.log("[activateHandler] Already active, skipping:", subscriptionId);
       msg.ack();
       return;
     }
 
+    // Hitung periode baru berdasarkan billingCycle plan saat ini
     const plan = await getPlanById(db, sub.planId);
     const now = new Date();
     const periodEnd = new Date(now);
@@ -44,6 +53,7 @@ export async function activateSubscription(
       periodEnd.setFullYear(periodEnd.getFullYear() + 1);
     }
 
+    // Set subscription menjadi aktif dan set period window
     await updateSubscription(db, subscriptionId, {
       status: "active",
       currentPeriodStart: now.toISOString(),
@@ -51,6 +61,7 @@ export async function activateSubscription(
       renewsAt: periodEnd.toISOString(),
     });
 
+    // Audit log untuk perubahan status (trace/debug)
     await insertAuditLog(db, {
       entityType: "subscription",
       entityId: subscriptionId,
@@ -60,6 +71,7 @@ export async function activateSubscription(
       source: "webhook",
     });
 
+    // Side effect: kirim notifikasi ke user
     await env.NOTIFICATION_QUEUE.send({
       type: "email_subscription_activated",
       subscriptionId,

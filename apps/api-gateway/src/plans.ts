@@ -4,9 +4,12 @@ import { createDb, getAllActivePlans, getPlanById, createPlan } from "@payflow/d
 
 type Env = { Bindings: { DATABASE_URL: string } };
 
+// Route untuk manajemen subscription plans.
+// Dipakai frontend `PlansPage.tsx` untuk menampilkan daftar paket dan detailnya.
 const app = new Hono<Env>();
 
-// GET /plans — all active plans
+// GET /api/plans
+// List semua plan yang aktif (isActive = true).
 app.get("/plans", async (c) => {
   try {
     const db = createDb(c.env.DATABASE_URL);
@@ -18,7 +21,8 @@ app.get("/plans", async (c) => {
   }
 });
 
-// GET /plans/:id — single plan
+// GET /api/plans/:id
+// Ambil 1 plan (contoh untuk halaman detail / validasi planId saat subscribe).
 app.get("/plans/:id", async (c) => {
   const id = c.req.param("id");
   try {
@@ -34,7 +38,8 @@ app.get("/plans/:id", async (c) => {
   }
 });
 
-// POST /plans — admin: create plan
+// POST /api/plans
+// Admin endpoint untuk membuat plan baru.
 app.post("/plans", async (c) => {
   try {
     const body = await c.req.json<{
@@ -47,6 +52,7 @@ app.post("/plans", async (c) => {
       metadata?: Record<string, unknown>;
     }>();
 
+    // Validasi minimal
     if (!body.name || body.price == null || !body.billingCycle) {
       return c.json(
         { error: { code: "INVALID_INPUT", message: "name, price, and billingCycle are required" } },
@@ -55,6 +61,7 @@ app.post("/plans", async (c) => {
     }
 
     const db = createDb(c.env.DATABASE_URL);
+    // price disimpan sebagai string karena tipe DB numeric
     const plan = await createPlan(db, { ...body, price: String(body.price) });
     return c.json({ data: plan }, 201);
   } catch (err) {
@@ -63,4 +70,5 @@ app.post("/plans", async (c) => {
   }
 });
 
+// Export route untuk di-mount di `apps/api-gateway/src/index.ts`
 export default app;

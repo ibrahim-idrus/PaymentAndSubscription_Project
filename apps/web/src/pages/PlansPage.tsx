@@ -3,6 +3,9 @@ import { useNavigate } from "react-router";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 
+// Base URL backend (api-gateway). Endpoint yang dipakai:
+// - GET /api/plans (load plan)
+// - POST /api/subscriptions (subscribe)
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8787";
 
 interface Plan {
@@ -49,6 +52,7 @@ export function PlansPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const navigate = useNavigate();
 
+  // Load plans dari backend
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [plansError, setPlansError] = useState<string | null>(null);
@@ -60,6 +64,7 @@ export function PlansPage() {
   const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Ambil daftar plan aktif dari api-gateway
     fetch(`${API_BASE}/api/plans`)
       .then((r) => r.json())
       .then((body: { data?: Plan[]; error?: { message: string } }) => {
@@ -82,6 +87,9 @@ export function PlansPage() {
     setSubscribing(true);
     setSubscribeError(null);
     try {
+      // Subscribe ke plan:
+      // - kalau plan punya trial -> backend return orderId = null -> langsung ke /subscription
+      // - kalau paid -> backend return orderId -> redirect ke /payment/status/:orderId untuk flow pembayaran
       const res = await fetch(`${API_BASE}/api/subscriptions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

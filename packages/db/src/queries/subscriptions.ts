@@ -4,6 +4,10 @@ import type { Db } from "../index";
 
 export type Subscription = typeof subscriptions.$inferSelect;
 
+// Query helpers untuk tabel `subscriptions`.
+// Dipakai oleh api-gateway (create/upgrade/cancel) dan subscription-worker (aktivasi setelah paid).
+
+// Buat subscription baru
 export async function createSubscription(
   db: Db,
   data: {
@@ -23,6 +27,7 @@ export async function createSubscription(
   return sub;
 }
 
+// Ambil subscription by id
 export async function getSubscriptionById(
   db: Db,
   id: string
@@ -34,6 +39,7 @@ export async function getSubscriptionById(
   return sub ?? null;
 }
 
+// Ambil subscription aktif user (active/trialing/past_due)
 export async function getActiveSubscriptionByUserId(
   db: Db,
   userId: string
@@ -52,6 +58,7 @@ export async function getActiveSubscriptionByUserId(
   return sub ?? null;
 }
 
+// Update subscription fields (partial)
 export async function updateSubscription(
   db: Db,
   id: string,

@@ -17,11 +17,17 @@ import { generateIdempotencyKey } from "@payflow/utils";
 
 type Env = {
   Bindings: {
+    // Connection string database (Neon/Postgres)
     DATABASE_URL: string;
+    // Queue untuk proses pembayaran subscription (invoice dibuat oleh payment-worker)
     PAYMENT_QUEUE: Queue;
   };
 };
 
+// Route untuk lifecycle subscription:
+// - subscribe (trial atau paid)
+// - fetch status subscription + billing history
+// - upgrade/downgrade/cancel
 const app = new Hono<Env>();
 
 // ─── GET /subscriptions/user/:userId ─────────────────────────────────────────
@@ -30,11 +36,14 @@ app.get("/subscriptions/user/:userId", async (c) => {
   const userId = c.req.param("userId");
   try {
     const db = createDb(c.env.DATABASE_URL);
+    // Ambil subscription aktif user (active/trialing/past_due)
     const subscription = await getActiveSubscriptionByUserId(db, userId);
     if (!subscription) {
       return c.json({ data: null, billingHistory: [] });
     }
+    // Ambil plan untuk kebutuhan UI
     const plan = await getPlanById(db, subscription.planId);
+    // Ambil order terakhir sebagai billing history
     const billingHistory = await getOrdersByUserId(db, userId, 10);
     return c.json({ data: { subscription, plan }, billingHistory });
   } catch (err) {
@@ -47,6 +56,7 @@ app.get("/subscriptions/user/:userId", async (c) => {
 
 app.post("/subscriptions", async (c) => {
   try {
+    // Frontend mengirim userId + planId (lihat `apps/web/src/pages/PlansPage.tsx`)
     const body = await c.req.json<{ userId: string; planId: string }>();
 
     if (!body.userId || !body.planId) {
@@ -58,16 +68,19 @@ app.post("/subscriptions", async (c) => {
 
     const db = createDb(c.env.DATABASE_URL);
 
+    // Validasi: user harus ada
     const user = await db.query.users.findFirst({ where: eq(users.id, body.userId) });
     if (!user) {
       return c.json({ error: { code: "NOT_FOUND", message: "User not found" } }, 404);
     }
 
+    // Validasi: plan harus ada
     const plan = await getPlanById(db, body.planId);
     if (!plan) {
       return c.json({ error: { code: "NOT_FOUND", message: "Plan not found" } }, 404);
     }
 
+    // Cegah double-subscribe jika masih ada subscription aktif
     const existing = await getActiveSubscriptionByUserId(db, body.userId);
     if (existing) {
       return c.json(
@@ -78,7 +91,7 @@ app.post("/subscriptions", async (c) => {
 
     const now = new Date();
 
-    // Trial flow — no payment needed
+    // Trial flow: tidak perlu pembayaran (langsung trialing sampai trialEnd)
     if (plan.trialDays > 0) {
       const trialEnd = new Date(now);
       trialEnd.setDate(trialEnd.getDate() + plan.trialDays);
@@ -106,7 +119,10 @@ app.post("/subscriptions", async (c) => {
       return c.json({ data: { subscription: sub, orderId: null } }, 201);
     }
 
-    // Paid flow — create subscription (past_due until payment confirmed) + order
+    // Paid flow:
+    // - buat subscription status "past_due" (belum aktif sampai payment confirmed via webhook)
+    // - buat order dengan subscriptionId
+    // - enqueue job pembayaran agar payment-worker membuat invoice Xendit
     const periodEnd = new Date(now);
     if (plan.billingCycle === "monthly") {
       periodEnd.setMonth(periodEnd.getMonth() + 1);
@@ -128,6 +144,7 @@ app.post("/subscriptions", async (c) => {
       .insert(orders)
       .values({
         userId: body.userId,
+        // Link order -> subscription; dipakai webhook-worker untuk trigger activation saat paid
         subscriptionId: sub.id,
         idempotencyKey,
         amount: String(plan.price),
@@ -137,6 +154,7 @@ app.post("/subscriptions", async (c) => {
       })
       .returning({ id: orders.id });
 
+    // Proses invoice dilakukan async oleh payment-worker
     await c.env.PAYMENT_QUEUE.send({ type: "process-payment", orderId: order.id });
 
     await insertAuditLog(db, {
@@ -184,7 +202,7 @@ app.post("/subscriptions/:id/upgrade", async (c) => {
       return c.json({ error: { code: "NOT_FOUND", message: "Plan not found" } }, 404);
     }
 
-    // Immediate upgrade: reset period from today
+    // Upgrade langsung: reset period dari hari ini, dan buat order baru untuk pembayaran upgrade
     const now = new Date();
     const periodEnd = new Date(now);
     if (newPlan.billingCycle === "monthly") {
@@ -216,6 +234,7 @@ app.post("/subscriptions/:id/upgrade", async (c) => {
       })
       .returning({ id: orders.id });
 
+    // Invoice dibuat async lewat payment-worker
     await c.env.PAYMENT_QUEUE.send({ type: "process-payment", orderId: order.id });
 
     await insertAuditLog(db, {
@@ -256,7 +275,8 @@ app.post("/subscriptions/:id/downgrade", async (c) => {
       return c.json({ error: { code: "NOT_FOUND", message: "Plan not found" } }, 404);
     }
 
-    // Downgrade applies at period end
+    // Downgrade berlaku di akhir periode (tidak membuat order baru).
+    // Kita simpan plan target di metadata agar bisa dieksekusi oleh renewal-cron/worker nanti.
     const existingMeta = (sub.metadata as Record<string, unknown>) ?? {};
     await updateSubscription(db, id, {
       cancelAtPeriodEnd: true,
@@ -298,6 +318,7 @@ app.post("/subscriptions/:id/cancel", async (c) => {
       );
     }
 
+    // Cancel = set cancelAtPeriodEnd sehingga akses tetap sampai period end
     await updateSubscription(db, id, {
       cancelAtPeriodEnd: true,
       cancelledAt: new Date().toISOString(),
