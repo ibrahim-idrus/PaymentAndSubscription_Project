@@ -1,5 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
-import { createDb, webhookEvents, orders, auditLogs } from "@payflow/db";
+import {
+  createDb, webhookEvents, orders, auditLogs,
+  getCustomerInvoiceByXenditId, updateCustomerInvoiceStatus,
+} from "@payflow/db";
 import { eq } from "drizzle-orm";
 
 // Env minimum untuk memproses event webhook yang datang dari queue (webhook-jobs)
@@ -65,13 +68,34 @@ export async function handleInvoiceEvent(
     const order = await db.query.orders.findFirst({
       where: eq(orders.xenditInvoiceId, event.id),
     });
+
+    const mappedStatus = statusMap[event.status] ?? "failed";
+
+    // 2b. Fallback: cek customer_invoices (flow invoice manual admin)
     if (!order) {
-      console.error("[invoiceHandler] Order not found for invoice:", event.id);
+      const customerInvoice = await getCustomerInvoiceByXenditId(db, event.id);
+      if (!customerInvoice) {
+        console.error("[invoiceHandler] No order or customer invoice found for invoice:", event.id);
+        msg.ack();
+        return;
+      }
+
+      await updateCustomerInvoiceStatus(db, customerInvoice.id, mappedStatus, event.paid_at);
+
+      await db.insert(auditLogs).values({
+        entityType: "order",
+        entityId: customerInvoice.id,
+        action: "status_changed",
+        oldStatus: customerInvoice.status,
+        newStatus: mappedStatus,
+        source: "webhook",
+        webhookEventId: event.id,
+      });
+
+      console.log(`[invoiceHandler] CustomerInvoice ${customerInvoice.id} updated to: ${mappedStatus}`);
       msg.ack();
       return;
     }
-
-    const mappedStatus = statusMap[event.status] ?? "failed";
 
     // 3. Update order status
     await db

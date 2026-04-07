@@ -6,6 +6,8 @@ import {
   updateOrderStatus,
   insertWebhookEvent,
   insertAuditLog,
+  getCustomerInvoiceByXenditId,
+  updateCustomerInvoiceStatus,
 } from "@payflow/db";
 import { verifyXenditWebhook } from "@payflow/utils";
 
@@ -83,54 +85,81 @@ app.post("/webhook/xendit", async (c) => {
     return c.json({ ok: true });
   }
 
-  // Step 4 — Find order:
+  // Step 4 — Find order (flow subscription/one-time payment):
   // Setelah payment-worker membuat invoice, ia menyimpan invoice.id ke orders.xenditInvoiceId.
   const order = await getOrderByXenditInvoiceId(db, body.id);
-  if (!order) {
-    console.error("[statusHandler] Order not found for invoice:", body.id);
-    return c.json({ error: "Order not found" }, 404);
-  }
 
-  // Step 5 — Safety: skip jika sudah status final (hindari status "bolak-balik" karena event terlambat)
-  if ((FINAL_STATUSES as readonly string[]).includes(order.status)) {
-    console.log("[statusHandler] Order already final, skipping:", order.id, order.status);
+  if (order) {
+    // Step 5 — Safety: skip jika sudah status final
+    if ((FINAL_STATUSES as readonly string[]).includes(order.status)) {
+      console.log("[statusHandler] Order already final, skipping:", order.id, order.status);
+      return c.json({ ok: true });
+    }
+
+    // Step 6 — Update orders.status
+    const newStatus = mapOrderStatus(body.status);
+    await updateOrderStatus(db, order.id, newStatus, body.paid_at);
+
+    // Step 7 — Audit log
+    await insertAuditLog(db, {
+      entityType: "order",
+      entityId: order.id,
+      action: "status_changed",
+      oldStatus: order.status,
+      newStatus,
+      source: "webhook",
+      webhookEventId: body.id,
+    });
+
+    // Step 8 — Side effects jika paid
+    if (newStatus === "paid") {
+      await c.env.NOTIFICATION_QUEUE.send({
+        type: "email_payment_success",
+        orderId: order.id,
+        userId: order.userId,
+      });
+
+      // Step 9 — Kalau order terkait subscription, trigger aktivasi subscription
+      if (order.subscriptionId) {
+        await c.env.SUBSCRIPTION_QUEUE.send({
+          type: "activate",
+          subscriptionId: order.subscriptionId,
+          userId: order.userId,
+        });
+      }
+    }
+
+    console.log(`[statusHandler] Order ${order.id} → ${newStatus}`);
     return c.json({ ok: true });
   }
 
-  // Step 6 — Map status dari Xendit → status internal kita, lalu update orders.status
-  const newStatus = mapOrderStatus(body.status);
-  await updateOrderStatus(db, order.id, newStatus, body.paid_at);
+  // Step 4b — Fallback: cek customer_invoices (flow invoice manual admin)
+  const customerInvoice = await getCustomerInvoiceByXenditId(db, body.id);
+  if (!customerInvoice) {
+    console.error("[statusHandler] No order or customer invoice found for xendit invoice:", body.id);
+    return c.json({ error: "Invoice not found" }, 404);
+  }
 
-  // Step 7 — Audit log: catat perubahan status untuk trace/debug
+  // Skip jika sudah final
+  if ((FINAL_STATUSES as readonly string[]).includes(customerInvoice.status)) {
+    console.log("[statusHandler] Customer invoice already final, skipping:", customerInvoice.id, customerInvoice.status);
+    return c.json({ ok: true });
+  }
+
+  const newStatus = mapOrderStatus(body.status);
+  await updateCustomerInvoiceStatus(db, customerInvoice.id, newStatus, body.paid_at);
+
   await insertAuditLog(db, {
     entityType: "order",
-    entityId: order.id,
+    entityId: customerInvoice.id,
     action: "status_changed",
-    oldStatus: order.status,
+    oldStatus: customerInvoice.status,
     newStatus,
     source: "webhook",
     webhookEventId: body.id,
   });
 
-  // Step 8 — Side effects jika paid
-  if (newStatus === "paid") {
-    await c.env.NOTIFICATION_QUEUE.send({
-      type: "email_payment_success",
-      orderId: order.id,
-      userId: order.userId,
-    });
-
-    // Step 9 — Kalau order terkait subscription, trigger aktivasi subscription
-    if (order.subscriptionId) {
-      await c.env.SUBSCRIPTION_QUEUE.send({
-        type: "activate",
-        subscriptionId: order.subscriptionId,
-        userId: order.userId,
-      });
-    }
-  }
-
-  console.log(`[statusHandler] Order ${order.id} → ${newStatus}`);
+  console.log(`[statusHandler] CustomerInvoice ${customerInvoice.id} → ${newStatus}`);
   return c.json({ ok: true });
 });
 
