@@ -47,6 +47,9 @@ export const subscriptionStatus = pgEnum("subscription_status", [
   "trialing", "active", "past_due", "cancelled", "suspended", "expired",
 ]);
 
+// Tipe pelanggan (individual atau bisnis)
+export const customerType = pgEnum("customer_type", ["INDIVIDUAL", "BUSINESS"]);
+
 // Jenis event webhook dari Xendit (payment gateway)
 export const webhookEventType = pgEnum("webhook_event_type", [
   "invoice.paid",
@@ -60,6 +63,56 @@ export const webhookEventType = pgEnum("webhook_event_type", [
 // =============================================================================
 // TABEL UTAMA
 // =============================================================================
+
+/**
+ * customers — Data pelanggan yang dibuat oleh admin.
+ * Digunakan untuk membuat invoice manual via Xendit.
+ */
+export const customers = pgTable("customers", {
+  id: uuid().defaultRandom().primaryKey().notNull(),
+  name: varchar({ length: 255 }).notNull(),
+  companyName: varchar("company_name", { length: 255 }),
+  email: varchar({ length: 320 }),
+  phoneNumber: varchar("phone_number", { length: 50 }),
+  phoneCountryCode: varchar("phone_country_code", { length: 10 }).default("+62").notNull(),
+  type: customerType().default("INDIVIDUAL").notNull(),
+  xenditCustomerId: varchar("xendit_customer_id", { length: 255 }),
+  invoiceCount: integer("invoice_count").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_customers_name").using("btree", table.name.asc().nullsLast().op("text_ops")),
+  index("idx_customers_company").using("btree", table.companyName.asc().nullsLast().op("text_ops")),
+  unique("customers_xendit_customer_id_key").on(table.xenditCustomerId),
+]);
+
+/**
+ * customerInvoices — Invoice yang dibuat admin untuk pelanggan.
+ * Terpisah dari orders (yang untuk subscription/one-time payment users).
+ */
+export const customerInvoices = pgTable("customer_invoices", {
+  id: uuid().defaultRandom().primaryKey().notNull(),
+  customerId: uuid("customer_id").notNull(),
+  referenceId: varchar("reference_id", { length: 255 }).notNull(), // format: acme_Budi_03042026_001
+  xenditInvoiceId: varchar("xendit_invoice_id", { length: 255 }),
+  invoiceUrl: text("invoice_url"),
+  amount: numeric({ precision: 12, scale: 2 }).notNull(),
+  currency: char({ length: 3 }).default("IDR").notNull(),
+  status: orderStatus().default("pending").notNull(),
+  description: text(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }),
+  paidAt: timestamp("paid_at", { withTimezone: true, mode: "string" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_customer_invoices_customer").using("btree", table.customerId.asc().nullsLast().op("uuid_ops")),
+  index("idx_customer_invoices_status").using("btree", table.status.asc().nullsLast().op("enum_ops")),
+  index("idx_customer_invoices_xendit").using("btree", table.xenditInvoiceId.asc().nullsLast().op("text_ops")),
+  foreignKey({ columns: [table.customerId], foreignColumns: [customers.id], name: "customer_invoices_customer_id_fkey" }).onDelete("restrict"),
+  unique("customer_invoices_reference_id_key").on(table.referenceId),
+  unique("customer_invoices_xendit_invoice_id_key").on(table.xenditInvoiceId),
+  check("customer_invoices_amount_check", sql`amount > (0)::numeric`),
+]);
 
 /**
  * plans — Daftar paket langganan yang tersedia.
@@ -134,6 +187,7 @@ export const subscriptions = pgTable("subscriptions", {
   cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),   // true = cancel saat periode habis
   gracePeriodEndsAt: timestamp("grace_period_ends_at", { withTimezone: true, mode: "string" }), // Batas waktu grace period
   previousPlanId: uuid("previous_plan_id"),                                       // Plan sebelumnya (untuk downgrade/upgrade)
+  xenditRecurringPlanId: varchar("xendit_recurring_plan_id", { length: 255 }),   // ID recurring plan di Xendit (recp_xxx)
   metadata: jsonb(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
@@ -143,9 +197,11 @@ export const subscriptions = pgTable("subscriptions", {
   index("idx_subscriptions_renews_at").using("btree", table.renewsAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(renews_at IS NOT NULL)`),
   index("idx_subscriptions_status").using("btree", table.status.asc().nullsLast().op("enum_ops")),
   index("idx_subscriptions_user").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
+  index("idx_subscriptions_xendit_recurring").using("btree", table.xenditRecurringPlanId.asc().nullsLast().op("text_ops")).where(sql`(xendit_recurring_plan_id IS NOT NULL)`),
   foreignKey({ columns: [table.userId], foreignColumns: [users.id], name: "subscriptions_user_id_fkey" }).onDelete("cascade"),
   foreignKey({ columns: [table.planId], foreignColumns: [plans.id], name: "subscriptions_plan_id_fkey" }).onDelete("restrict"),
   foreignKey({ columns: [table.previousPlanId], foreignColumns: [plans.id], name: "subscriptions_previous_plan_id_fkey" }).onDelete("set null"),
+  unique("subscriptions_xendit_recurring_plan_id_key").on(table.xenditRecurringPlanId),
 ]);
 
 /**

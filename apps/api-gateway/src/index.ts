@@ -10,9 +10,12 @@ import checkoutRoute from "./checkout";
 import ordersRoute from "./orders";
 import plansRoute from "./plans";
 import subscriptionsRoute from "./subscriptions";
+import customersRoute from "./customers";
+import adminInvoicesRoute from "./adminInvoices";
 
 type Bindings = {
   DATABASE_URL: string;
+  XENDIT_SECRET_KEY: string;
   XENDIT_WEBHOOK_TOKEN: string;
   WEBHOOK_QUEUE: Queue;
   PAYMENT_QUEUE: Queue;
@@ -131,6 +134,10 @@ app.route("/api", ordersRoute);
 app.route("/api", plansRoute);
 // Mount route untuk flow subscription (create/upgrade/cancel, dll)
 app.route("/api", subscriptionsRoute);
+// Mount route untuk manajemen pelanggan (admin)
+app.route("/api", customersRoute);
+// Mount route untuk pembuatan invoice oleh admin
+app.route("/api", adminInvoicesRoute);
 
 // Export Hono app (entry point Worker) sesuai `main = "src/index.ts"` di wrangler.toml
 export default app;
