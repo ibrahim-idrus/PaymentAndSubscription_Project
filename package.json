@@ -4,6 +4,8 @@
     "packageManager":  "pnpm@10.28.2",
     "scripts":  {
                     "dev":  "pnpm --parallel --filter @payflow/web --filter @payflow/api-gateway dev",
+                    "dev:all": "pnpm --parallel --filter @payflow/web --filter @payflow/api-gateway --filter @payflow/payment-worker --filter @payflow/webhook-worker --filter @payflow/subscription-worker --filter @payflow/notification-worker --filter @payflow/renewal-cron dev",
+                    "dev:all:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-all.ps1",
                     "dev:web":  "pnpm --filter @payflow/web dev",
                     "dev:api":  "pnpm --filter @payflow/api-gateway dev",
                     "build":  "pnpm --filter @payflow/web build",

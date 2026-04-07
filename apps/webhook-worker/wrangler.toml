@@ -3,7 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2024-12-30"
 compatibility_flags = ["nodejs_compat"]
 
+[dev]
+port = 8790
+
 [vars]
+XENDIT_WEBHOOK_TOKEN = "uozG8Rw58BoH1BmqBJwU2FNnmymIHnpFccpL0ZunOQCoE77m"
 # Secrets: wrangler secret put DATABASE_URL
 
 [[queues.consumers]]
