@@ -8,6 +8,8 @@ port = 8787
 
 [vars]
 # Add non-secret env vars here
+# URL frontend app — ganti dengan URL deployment kamu (Cloudflare Pages, dll.)
+FRONTEND_URL = "http://localhost:5173"
 
 # Secrets must be set via wrangler secret:
 #   wrangler secret put DATABASE_URL

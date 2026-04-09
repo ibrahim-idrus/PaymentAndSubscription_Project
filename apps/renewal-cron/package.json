@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@payflow/db": "workspace:*",
-    "@payflow/types": "workspace:*"
+    "@payflow/types": "workspace:*",
+    "drizzle-orm": "^0.43.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
